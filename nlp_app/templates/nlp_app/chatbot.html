@@ -6,14 +6,51 @@
     <title>CyBot</title>
     <style>
         body {
-            background: linear-gradient(135deg, #e9f0ff 0%, #f7faff 100%);
+            background: #f8f7f4;
             font-family: 'Segoe UI', 'Roboto', Arial, sans-serif;
             margin: 0;
             padding: 0;
             min-height: 100vh;
         }
+        .main-layout {
+            display: flex;
+            min-height: 100vh;
+        }
+        .sidebar {
+            width: 220px;
+            background: #232136;
+            color: #fff;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            border-right: 2px solid #d72660;
+        }
+        .sidebar-header {
+            padding: 24px 0 18px 0;
+            text-align: center;
+            font-size: 1.3rem;
+            font-weight: 700;
+            background: #d72660;
+            letter-spacing: 2px;
+        }
+        .chat-history {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px 0;
+        }
+        .history-item {
+            padding: 12px 18px;
+            cursor: pointer;
+            border-bottom: 1px solid #2d2b40;
+            transition: background 0.2s;
+        }
+        .history-item:hover, .history-item.active {
+            background: #d72660;
+            color: #fff;
+        }
         .chat-container {
-            max-width: 600px;
+            flex: 1;
+            max-width: 700px;
             margin: 40px auto;
             background: #fff;
             border-radius: 18px;
@@ -22,9 +59,10 @@
             flex-direction: column;
             height: 80vh;
             overflow: hidden;
+            position: relative;
         }
         .chat-header {
-            background: #1976d2;
+            background: #d72660;
             color: #fff;
             padding: 24px 0 18px 0;
             text-align: center;
@@ -45,24 +83,29 @@
             align-items: center;
             justify-content: center;
             font-size: 1.7rem;
-            box-shadow: 0 2px 8px rgba(25, 118, 210, 0.15);
+            box-shadow: 0 2px 8px rgba(215, 38, 96, 0.15);
         }
         .chat-messages {
             flex: 1;
-            padding: 24px 18px 18px 18px;
+            padding: 24px 0 18px 0;
             overflow-y: auto;
-            background: #f7faff;
+            background: #f8f7f4;
             display: flex;
             flex-direction: column;
             gap: 18px;
+            align-items: center;
         }
         .message-row {
             display: flex;
             align-items: flex-end;
             gap: 10px;
+            opacity: 0;
+            animation: fadeIn 0.5s forwards;
+            width: 100%;
+            justify-content: center;
         }
-        .message-row.user {
-            flex-direction: row-reverse;
+        @keyframes fadeIn {
+            to { opacity: 1; }
         }
         .avatar {
             width: 38px;
@@ -76,7 +119,7 @@
             box-shadow: 0 1px 4px rgba(60, 100, 200, 0.10);
         }
         .avatar.bot {
-            background: #1976d2;
+            background: #d72660;
             color: #fff;
         }
         .chat-bubble {
@@ -86,86 +129,254 @@
             font-size: 1.08rem;
             line-height: 1.5;
             box-shadow: 0 2px 8px rgba(60, 100, 200, 0.07);
+            position: relative;
+            background: #fff;
+            color: #232136;
+            margin-bottom: 2px;
         }
         .message-row.user .chat-bubble {
-            background: #e3eafc;
-            color: #222;
+            background: #f7eaff;
+            color: #232136;
             border-bottom-right-radius: 6px;
         }
         .message-row.bot .chat-bubble {
-            background: #1976d2;
+            background: #232136;
             color: #fff;
             border-bottom-left-radius: 6px;
         }
-        .chat-input-area {
+        .timestamp {
+            font-size: 0.82rem;
+            color: #a0a0a0;
+            margin-top: 4px;
+            margin-left: 4px;
+            margin-right: 4px;
+            display: block;
+            text-align: right;
+        }
+        .typing-indicator {
             display: flex;
             align-items: center;
-            padding: 18px;
-            background: #f7faff;
-            border-top: 1px solid #e3eafc;
+            gap: 8px;
+            margin-left: 48px;
+            margin-bottom: 8px;
+            justify-content: center;
         }
-        .chat-input {
-            flex: 1;
-            padding: 12px 16px;
+        .typing-dot {
+            width: 8px;
+            height: 8px;
+            background: #d72660;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 2px;
+            animation: bounce 1.2s infinite both;
+        }
+        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0.7); opacity: 0.3; }
+            40% { transform: scale(1.2); opacity: 1; }
+        }
+        .file-upload {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .file-preview {
+            margin-top: 8px;
+            margin-bottom: 4px;
+            font-size: 0.95rem;
+            color: #d72660;
+            background: #f7eaff;
             border-radius: 8px;
-            border: 1px solid #c7d6f3;
-            font-size: 1rem;
-            outline: none;
-            margin-right: 12px;
+            padding: 6px 12px;
+            max-width: 90%;
+            word-break: break-all;
+        }
+        .code-block {
+            background: #181825;
+            color: #fff;
+            border-radius: 8px;
+            padding: 10px 14px;
+            margin: 8px 0;
+            font-family: 'Fira Mono', 'Consolas', monospace;
+            font-size: 0.98rem;
+            overflow-x: auto;
+            position: relative;
+        }
+        .code-toggle {
+            background: none;
+            border: none;
+            color: #d72660;
+            font-size: 0.95rem;
+            cursor: pointer;
+            margin-bottom: 4px;
+            margin-left: -4px;
+        }
+        .chat-input-area {
+            display: flex;
+            align-items: flex-end;
+            padding: 18px 24px;
+            background: #f8f7f4;
+            border-top: 1px solid #ececec;
+            position: sticky;
+            bottom: 0;
+            z-index: 2;
+            box-shadow: 0 -2px 12px rgba(60, 100, 200, 0.04);
+        }
+        .chat-input-box {
+            flex: 1;
+            display: flex;
+            align-items: flex-end;
             background: #fff;
+            border-radius: 18px;
+            box-shadow: 0 2px 8px rgba(60, 100, 200, 0.07);
+            border: 1.5px solid #ececec;
+            padding: 8px 12px;
+            margin-right: 12px;
+            min-height: 48px;
             transition: border 0.2s;
         }
-        .chat-input:focus {
-            border: 1.5px solid #1976d2;
+        .chat-input-box:focus-within {
+            border: 1.5px solid #d72660;
         }
-        .send-btn {
-            background: #1976d2;
-            color: #fff;
+        .chat-textarea {
+            flex: 1;
             border: none;
-            border-radius: 8px;
-            padding: 12px 28px;
+            outline: none;
             font-size: 1.08rem;
-            font-weight: 600;
+            background: transparent;
+            resize: none;
+            min-height: 32px;
+            max-height: 120px;
+            padding: 6px 0;
+            margin: 0;
+        }
+        .send-arrow-btn {
+            background: none;
+            border: none;
+            outline: none;
             cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 8px;
+            height: 40px;
+            width: 40px;
+            border-radius: 50%;
             transition: background 0.2s;
         }
-        .send-btn:hover {
-            background: #1251a3;
+        .send-arrow-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
         }
-        @media (max-width: 700px) {
+        .send-arrow-btn svg {
+            width: 28px;
+            height: 28px;
+            fill: #d72660;
+            transition: fill 0.2s;
+        }
+        .send-arrow-btn:active svg, .send-arrow-btn:hover svg {
+            fill: #a01346;
+        }
+        @media (max-width: 900px) {
+            .main-layout {
+                flex-direction: column;
+            }
+            .sidebar {
+                width: 100vw;
+                min-height: 60px;
+                border-right: none;
+                border-bottom: 2px solid #d72660;
+                flex-direction: row;
+                align-items: center;
+                overflow-x: auto;
+            }
+            .sidebar-header {
+                font-size: 1.1rem;
+                padding: 12px 0 8px 0;
+            }
             .chat-container {
                 max-width: 100vw;
                 height: 100vh;
                 border-radius: 0;
                 margin: 0;
             }
+            .chat-input-area {
+                padding: 10px 4px;
+            }
         }
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
-    <div class="chat-container">
-        <div class="chat-header">
-            <span class="cybot-avatar">🤖</span>
-            CyBot
+    <div class="main-layout">
+        <div class="sidebar">
+            <div class="sidebar-header">Chat History</div>
+            <div class="chat-history" id="chat-history">
+                <!-- Placeholder for chat history items -->
+                <div class="history-item active">Current Chat</div>
+            </div>
         </div>
-        <div class="chat-messages" id="chat-messages">
-            <!-- Messages will be dynamically inserted here -->
+        <div class="chat-container">
+            <div class="chat-header">
+                <span class="cybot-avatar">🤖</span>
+                CyBot
+            </div>
+            <div class="chat-messages" id="chat-messages">
+                <!-- Messages will be dynamically inserted here -->
+            </div>
+            <form class="chat-input-area" id="chat-form" autocomplete="off">
+                <div class="file-upload">
+                    <input type="file" id="file-input" style="display:none;" />
+                    <button type="button" id="file-btn" title="Upload file">📎</button>
+                    <span id="file-name" class="file-preview" style="display:none;"></span>
+                </div>
+                <div class="chat-input-box">
+                    <textarea class="chat-textarea" id="chat-input" placeholder="Type your message..." required rows="1"></textarea>
+                    <button type="submit" class="send-arrow-btn" id="send-btn" disabled title="Send">
+                        <svg viewBox="0 0 24 24"><path d="M3.4,20.3l17.4-7.5c0.5-0.2,0.5-0.9,0-1.1L3.4,4.2c-0.5-0.2-1,0.2-1,0.7v4.6c0,0.3,0.2,0.6,0.5,0.7l11.2,2.8l-11.2,2.8c-0.3,0.1-0.5,0.4-0.5,0.7v4.6C2.4,20.1,2.9,20.5,3.4,20.3z"/></svg>
+                    </button>
+                </div>
+            </form>
         </div>
-        <form class="chat-input-area" id="chat-form" autocomplete="off">
-            <input type="text" class="chat-input" id="chat-input" placeholder="Type your message..." required autofocus />
-            <button type="submit" class="send-btn">Send</button>
-        </form>
     </div>
     <script>
         const chatMessages = document.getElementById('chat-messages');
         const chatForm = document.getElementById('chat-form');
         const chatInput = document.getElementById('chat-input');
+        const sendBtn = document.getElementById('send-btn');
+        const fileBtn = document.getElementById('file-btn');
+        const fileInput = document.getElementById('file-input');
+        const fileNameSpan = document.getElementById('file-name');
+        const chatHistory = document.getElementById('chat-history');
 
         // Avatars
         const userAvatar = '🧑';
         const botAvatar = '🤖';
 
-        function addMessage(message, sender) {
+        // Add a welcome message from CyBot on load
+        window.addEventListener('DOMContentLoaded', () => {
+            addMessage('Hello! I am CyBot, your cybersecurity assistant. How can I help you today?', 'bot', new Date());
+        });
+
+        function formatTime(date) {
+            return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+
+        // Markdown rendering with collapsible code blocks
+        function renderMarkdownWithCollapsibleCode(md) {
+            let html = marked.parse(md);
+            html = html.replace(/<pre><code( class="[^"]*")?>([\s\S]*?)<\/code><\/pre>/g, (match, cls, code) => {
+                const codeText = code.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                return `
+                    <button class="code-toggle" onclick="this.nextElementSibling.style.display = (this.nextElementSibling.style.display === 'none' ? 'block' : 'none'); this.textContent = this.nextElementSibling.style.display === 'none' ? 'Show code' : 'Hide code'; return false;">Hide code</button>
+                    <div class="code-block">${codeText}</div>
+                `;
+            });
+            return html;
+        }
+
+        function addMessage(message, sender, time = new Date(), isMarkdown = true) {
             const row = document.createElement('div');
             row.className = `message-row ${sender}`;
 
@@ -175,26 +386,129 @@
 
             const bubble = document.createElement('div');
             bubble.className = 'chat-bubble';
-            bubble.textContent = message;
-
-            if (sender === 'user') {
-                row.appendChild(avatar);
-                row.appendChild(bubble);
+            if (isMarkdown) {
+                bubble.innerHTML = renderMarkdownWithCollapsibleCode(message);
             } else {
-                row.appendChild(avatar);
-                row.appendChild(bubble);
+                bubble.textContent = message;
             }
+
+            const timestamp = document.createElement('span');
+            timestamp.className = 'timestamp';
+            timestamp.textContent = formatTime(time);
+            bubble.appendChild(timestamp);
+
+            row.appendChild(avatar);
+            row.appendChild(bubble);
             chatMessages.appendChild(row);
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
 
+        function showTypingIndicator() {
+            const typingRow = document.createElement('div');
+            typingRow.className = 'typing-indicator';
+            typingRow.id = 'typing-indicator';
+            typingRow.innerHTML = `
+                <span class="avatar bot">${botAvatar}</span>
+                <span>
+                    <span class="typing-dot"></span>
+                    <span class="typing-dot"></span>
+                    <span class="typing-dot"></span>
+                </span>
+            `;
+            chatMessages.appendChild(typingRow);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function hideTypingIndicator() {
+            const typingRow = document.getElementById('typing-indicator');
+            if (typingRow) {
+                chatMessages.removeChild(typingRow);
+            }
+        }
+
+        // File upload and preview
+        fileBtn.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', async () => {
+            if (fileInput.files.length > 0) {
+                const file = fileInput.files[0];
+                fileNameSpan.textContent = file.name;
+                fileNameSpan.style.display = 'inline-block';
+
+                // Only handle PDF
+                if (file.type === 'application/pdf') {
+                    showTypingIndicator();
+                    const formData = new FormData();
+                    formData.append('pdf', file);
+
+                    try {
+                        const response = await fetch('/nlp/upload_pdf/', {
+                            method: 'POST',
+                            body: formData
+                        });
+                        const data = await response.json();
+                        hideTypingIndicator();
+                        if (data.qa_pairs) {
+                            data.qa_pairs.forEach(pair => {
+                                addMessage(pair.question, 'user', new Date(), true);
+                                addMessage(pair.answer, 'bot', new Date(), true);
+                            });
+                        } else if (data.error) {
+                            addMessage('Error: ' + data.error, 'bot', new Date(), false);
+                        }
+                    } catch (err) {
+                        hideTypingIndicator();
+                        addMessage('Sorry, there was an error processing the PDF.', 'bot', new Date(), false);
+                    }
+                    fileInput.value = '';
+                    fileNameSpan.textContent = '';
+                    fileNameSpan.style.display = 'none';
+                }
+            } else {
+                fileNameSpan.textContent = '';
+                fileNameSpan.style.display = 'none';
+            }
+        });
+
+        // Auto-expand textarea
+        chatInput.addEventListener('input', () => {
+            chatInput.style.height = 'auto';
+            chatInput.style.height = (chatInput.scrollHeight) + 'px';
+            sendBtn.disabled = chatInput.value.trim().length === 0;
+        });
+
+        // Enable send arrow only if there is text
+        chatInput.addEventListener('keyup', () => {
+            sendBtn.disabled = chatInput.value.trim().length === 0;
+        });
+
+        // Allow Enter to send, Shift+Enter for newline
+        chatInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                if (!sendBtn.disabled) {
+                    sendBtn.click();
+                }
+            }
+        });
+
         chatForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const userMessage = chatInput.value.trim();
-            if (!userMessage) return;
-            addMessage(userMessage, 'user');
+            if (!userMessage && fileInput.files.length === 0) return;
+            if (fileInput.files.length > 0) {
+                const file = fileInput.files[0];
+                addMessage(`**Uploaded file:** ${file.name}`, 'user', new Date(), true);
+                fileInput.value = '';
+                fileNameSpan.textContent = '';
+                fileNameSpan.style.display = 'none';
+            }
+            if (userMessage) {
+                addMessage(userMessage, 'user', new Date(), true);
+            }
             chatInput.value = '';
-            addMessage('...', 'bot'); // Loading indicator
+            chatInput.style.height = 'auto';
+            sendBtn.disabled = true;
+            showTypingIndicator();
             chatMessages.scrollTop = chatMessages.scrollHeight;
             try {
                 const response = await fetch('/nlp/chatbot/', {
@@ -203,12 +517,11 @@
                     body: JSON.stringify({ message: userMessage })
                 });
                 const data = await response.json();
-                // Remove loading indicator
-                chatMessages.removeChild(chatMessages.lastChild);
-                addMessage(data.response, 'bot');
+                hideTypingIndicator();
+                addMessage(data.response, 'bot', new Date(), true);
             } catch (err) {
-                chatMessages.removeChild(chatMessages.lastChild);
-                addMessage('Sorry, there was an error. Please try again.', 'bot');
+                hideTypingIndicator();
+                addMessage('Sorry, there was an error. Please try again.', 'bot', new Date(), false);
             }
         });
     </script>

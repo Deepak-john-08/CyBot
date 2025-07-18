@@ -8,6 +8,8 @@ import torch
 from dotenv import load_dotenv
 import os
 import requests
+from django.views.decorators.http import require_POST
+import PyPDF2
 
 load_dotenv()  # This will load variables from .env into os.environ
 
@@ -201,6 +203,31 @@ def chatbot_view(request):
         return JsonResponse({'response': groq_api_response})
     else:
         return JsonResponse({'error': 'POST request required.'}, status=405)
+
+@csrf_exempt
+@require_POST
+def upload_pdf_view(request):
+    if 'pdf' not in request.FILES:
+        return JsonResponse({'error': 'No PDF uploaded.'}, status=400)
+    pdf_file = request.FILES['pdf']
+    try:
+        reader = PyPDF2.PdfReader(pdf_file)
+        text = ""
+        for page in reader.pages:
+            page_text = page.extract_text()
+            if page_text:
+                text += page_text + "\n"
+        # Extract questions (lines ending with ?)
+        questions = re.findall(r'([^\n?]+\?)', text)
+        questions = [q.strip() for q in questions if q.strip().endswith('?')]
+        # For each question, get answer from CyBot (Groq)
+        answers = []
+        for q in questions:
+            answer = groq_response(q, model_name="llama3-70b-8192")
+            answers.append({'question': q, 'answer': answer})
+        return JsonResponse({'qa_pairs': answers})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
 
 def chatbot_page(request):
     return render(request, 'nlp_app/chatbot.html')
