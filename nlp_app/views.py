@@ -5,6 +5,11 @@ import json
 import re
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
+from dotenv import load_dotenv
+import os
+import requests
+
+load_dotenv()  # This will load variables from .env into os.environ
 
 # --- Improved Phishing detection stubs ---
 def detect_phishing_email(email_text):
@@ -62,22 +67,39 @@ def detect_phishing_link(link):
     else:
         return False, "This link does not appear to be phishing, but always check the URL carefully."
 
-# Load DialoGPT model and tokenizer globally
-try:
-    tokenizer = AutoTokenizer.from_pretrained("microsoft/DialoGPT-medium")
-    model = AutoModelForCausalLM.from_pretrained("microsoft/DialoGPT-medium")
-except Exception as e:
-    tokenizer = None
-    model = None
+# Remove DialoGPT and langchain fallback, add Ollama TinyLlama fallback
 
-def ml_fallback_response(user_message, chat_history_ids=None):
-    if not tokenizer or not model:
-        return "Sorry, the AI model is not available right now.", None
-    new_input_ids = tokenizer.encode(user_message + tokenizer.eos_token, return_tensors='pt')
-    bot_input_ids = torch.cat([chat_history_ids, new_input_ids], dim=-1) if chat_history_ids is not None else new_input_ids
-    chat_history_ids = model.generate(bot_input_ids, max_length=1000, pad_token_id=tokenizer.eos_token_id)
-    response = tokenizer.decode(chat_history_ids[:, bot_input_ids.shape[-1]:][0], skip_special_tokens=True)
-    return response, chat_history_ids
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")  # Store your key in .env
+
+def groq_response(user_message, model_name="llama3-70b-8192"):
+    print("GROQ_API_KEY:", GROQ_API_KEY)
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    data = {
+        "model": model_name,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are a cybersecurity expert assistant. Always answer the user's specific question directly and concisely. "
+                    "If the user asks for a definition, provide a clear and accurate definition of the exact term they mention, not a general topic."
+                )
+            },
+            {"role": "user", "content": user_message}
+        ]
+    }
+    print("Sending to Groq:", data)
+    try:
+        response = requests.post(url, headers=headers, json=data, timeout=30)
+        response.raise_for_status()
+        result = response.json()
+        return result["choices"][0]["message"]["content"]
+    except Exception as e:
+        print("Groq API error:", e)
+        return f"Error contacting Groq: {e}"
 
 def rule_based_response(user_message):
     rules = [
@@ -98,7 +120,19 @@ def rule_based_response(user_message):
         (r'vpn', "A VPN (Virtual Private Network) encrypts your internet connection and hides your IP address for privacy and security."),
         (r'patch', "A patch is a software update that fixes security vulnerabilities and other bugs."),
         (r'update', "Always keep your software and antivirus updated to protect against threats."),
-        (r'password', "Never share your password with anyone. Use strong, unique passwords for each account."),
+        (r'(how|steps?|tips?) (to|for)? (create|make|choose|set) (a )?strong password',
+         "Here are steps to create a strong password:\n"
+         "1. Use at least 12 characters (the longer, the better).\n"
+         "2. Mix uppercase, lowercase, numbers, and symbols.\n"
+         "3. Avoid common words, names, or easily guessed info.\n"
+         "4. Don’t reuse passwords across sites.\n"
+         "5. Consider using a passphrase or a password manager."),
+        (r'what is (a )?strong password',
+         "A strong password is long (at least 12 characters), uses a mix of letters, numbers, and symbols, and avoids common words or patterns."),
+        (r'strong password',
+         "A strong password should be at least 12 characters, include uppercase and lowercase letters, numbers, and symbols, and not use common words or personal info."),
+        (r'password',
+         "Never share your password with anyone. Use strong, unique passwords for each account."),
         (r'cybersecurity', "Cybersecurity is the practice of protecting systems, networks, and programs from digital attacks."),
         (r'firewall', "A firewall is a network security device that monitors and filters incoming and outgoing network traffic."),
         (r'backdoor', "A backdoor is a method of bypassing normal authentication to gain access to a system, often left by malware."),
@@ -119,12 +153,30 @@ def rule_based_response(user_message):
             return response
     return None
 
+# Ollama fallback for local models (Mistral or Llama2)
+def ollama_response(user_message, model_name="llama2"):
+    try:
+        response = requests.post(
+            "http://localhost:11434/api/generate",
+            json={
+                "model": model_name,
+                "prompt": user_message,
+                "stream": False
+            },
+            timeout=60
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data.get("response", f"Sorry, I couldn't generate a response with {model_name}.")
+    except Exception as e:
+        return f"Error contacting Ollama ({model_name}): {e}"
+
 @csrf_exempt
 def chatbot_view(request):
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
-            user_message = data.get('message', '').lower()
+            user_message = data.get('message', '')  # Do not lowercase
         except Exception:
             return JsonResponse({'error': 'Invalid input.'}, status=400)
 
@@ -144,9 +196,9 @@ def chatbot_view(request):
             is_phishing, result = detect_phishing_link(user_message)
             return JsonResponse({'response': result, 'phishing': is_phishing})
 
-        # ML/NLP fallback
-        ml_response, _ = ml_fallback_response(user_message)
-        return JsonResponse({'response': ml_response})
+        # Groq fallback (Llama 3 70B as default)
+        groq_api_response = groq_response(user_message, model_name="llama3-70b-8192")
+        return JsonResponse({'response': groq_api_response})
     else:
         return JsonResponse({'error': 'POST request required.'}, status=405)
 
