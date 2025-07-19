@@ -19,7 +19,7 @@ from django.urls import path, include
 from django.shortcuts import redirect
 
 urlpatterns = [
-    path('', lambda request: redirect('/nlp/chat/', permanent=False)),
+    path('', lambda request: redirect('/nlp/', permanent=False)),
     path('admin/', admin.site.urls),
     path('nlp/', include('nlp_app.urls')),
 ]

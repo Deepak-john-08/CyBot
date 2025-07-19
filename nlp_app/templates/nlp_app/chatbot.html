@@ -64,15 +64,34 @@
         .chat-header {
             background: #d72660;
             color: #fff;
-            padding: 24px 0 18px 0;
+            padding: 24px 20px 18px 20px;
             text-align: center;
             font-size: 2rem;
             font-weight: 700;
             letter-spacing: 2px;
             display: flex;
             align-items: center;
-            justify-content: center;
+            justify-content: space-between;
             gap: 12px;
+        }
+        .header-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .logout-btn {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .logout-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-1px);
         }
         .chat-header .cybot-avatar {
             width: 36px;
@@ -319,8 +338,13 @@
         </div>
         <div class="chat-container">
             <div class="chat-header">
-                <span class="cybot-avatar">🤖</span>
-                CyBot
+                <div class="header-title">
+                    <span class="cybot-avatar">🤖</span>
+                    CyBot
+                </div>
+                <button class="logout-btn" onclick="window.location.href='{% url 'logout' %}'">
+                    Logout
+                </button>
             </div>
             <div class="chat-messages" id="chat-messages">
                 <!-- Messages will be dynamically inserted here -->

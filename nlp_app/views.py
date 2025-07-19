@@ -1,80 +1,166 @@
 from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
-from django.shortcuts import render
+from django.shortcuts import render, redirect
+from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth.models import User
+from django.contrib.auth.decorators import login_required
+from django.contrib import messages
 import json
 import re
-from transformers import AutoModelForCausalLM, AutoTokenizer
-import torch
+# Lazy import heavy libraries only when needed
+# from transformers import AutoModelForCausalLM, AutoTokenizer
+# import torch
 from dotenv import load_dotenv
 import os
 import requests
 from django.views.decorators.http import require_POST
 import PyPDF2
+from .ml_models import predict_email_phishing, predict_url_phishing, load_models
 
 load_dotenv()  # This will load variables from .env into os.environ
 
+# Load ML models at startup (with error handling)
+try:
+    load_models()
+    print("ML models loaded successfully at startup")
+except Exception as e:
+    print(f"Warning: Could not load ML models at startup: {e}")
+
 # --- Improved Phishing detection stubs ---
 def detect_phishing_email(email_text):
-    # Rule-based phishing detection for emails
+    # Enhanced rule-based phishing detection for emails
     phishing_keywords = [
         "urgent", "verify your account", "login to your account", "update your information", "suspended",
         "confirm your identity", "click the link below", "act now", "immediate action required", "reset your password",
-        "security alert", "unusual activity", "account locked", "provide your credentials", "bank account"
+        "security alert", "unusual activity", "account locked", "provide your credentials", "bank account",
+        "transfer", "payment", "wire", "vendor", "confidential", "meeting right now", "reply when complete"
     ]
     suspicious_phrases = [
-        "dear customer", "dear user", "dear valued customer", "greetings from", "official notice"
+        "dear customer", "dear user", "dear valued customer", "greetings from", "official notice",
+        "i need you to", "this is urgent", "urgent and confidential"
     ]
     suspicious_senders = [
-        "noreply@", "support@", "admin@", "service@", "security@"
+        "noreply@", "support@", "admin@", "service@", "security@", "ceo@", "-security.com"
     ]
+    # Financial/Business Email Compromise indicators
+    bec_indicators = [
+        "transfer money", "wire transfer", "new vendor", "payment request", "invoice", 
+        "bank details", "account details", "routing number", "swift code"
+    ]
+    
     score = 0
+    email_lower = email_text.lower()
+    
+    # Check phishing keywords
     for keyword in phishing_keywords:
-        if keyword in email_text.lower():
+        if keyword in email_lower:
             score += 2
+    
+    # Check suspicious phrases
     for phrase in suspicious_phrases:
-        if phrase in email_text.lower():
-            score += 1
+        if phrase in email_lower:
+            score += 2  # Increased from 1 to 2
+    
+    # Check suspicious senders
     for sender in suspicious_senders:
-        if sender in email_text.lower():
-            score += 1
-    if score >= 3:
-        return True, "Warning: This email contains multiple signs of phishing. Do not click any links or provide personal information."
-    elif score == 2:
-        return True, "Caution: This email may be a phishing attempt. Be careful."
+        if sender in email_lower:
+            score += 2  # Increased from 1 to 2
+    
+    # Check BEC indicators (Business Email Compromise)
+    for indicator in bec_indicators:
+        if indicator in email_lower:
+            score += 3  # High score for financial requests
+    
+    # Check for urgency + money combination (major red flag)
+    if ("urgent" in email_lower or "immediately" in email_lower) and any(money_word in email_lower for money_word in ["money", "payment", "transfer", "$", "dollar"]):
+        score += 4
+    
+    # Check for CEO/executive impersonation
+    if any(exec_word in email_lower for exec_word in ["ceo", "president", "director", "manager"]) and any(request_word in email_lower for request_word in ["need you", "require", "transfer", "payment"]):
+        score += 3
+    
+    if score >= 2:
+        return True, "🚨 Whoa, hold up! This email is throwing up some serious red flags. Looks like someone's trying to pull a fast one on you—classic phishing move!"
     else:
-        return False, "This email does not appear to be phishing, but always stay vigilant."
+        return False, "✅ This email looks totally legit! Clean sender, personalized message, and no sketchy stuff in sight. You're good to go!"
 
 def detect_phishing_link(link):
-    # Rule-based phishing detection for links
+    # Enhanced rule-based phishing detection for links
     suspicious_patterns = [
-        r"bit\.ly", r"tinyurl", r"free-.*\.com", r"login-.*\.secure", r"secure-.*\.com", r"account-.*\.com",
-        r"\d{1,3}(?:\.\d{1,3}){3}",  # IP address in URL
-        r"paypal-.*\.com", r"bank-.*\.com", r"update-.*\.com", r"verify-.*\.com",
-        r"[a-zA-Z0-9]+\.(ru|cn|tk|ml|ga|cf|gq|xyz)"  # suspicious TLDs
+        # URL shorteners
+        r"bit\.ly", r"tinyurl", r"t\.co", r"goo\.gl", r"ow\.ly", r"is\.gd",
+        
+        # IP addresses in URLs
+        r"\d{1,3}(?:\.\d{1,3}){3}",
+        
+        # Suspicious domain patterns
+        r"account-.*\.com", r".*-account\.com", r"verify-.*\.com", r".*-verify\.com",
+        r"update-.*\.com", r".*-update\.com", r"secure-.*\.com", r".*-secure\.com",
+        r"login-.*\.com", r".*-login\.com", r"bank-.*\.com", r".*-bank\.com",
+        
+        # Brand spoofing patterns
+        r"paypal-.*\.com", r".*-paypal\.com", r"amazon-.*\.com", r".*-amazon\.com",
+        r"google-.*\.com", r".*-google\.com", r"microsoft-.*\.com", r".*-microsoft\.com",
+        
+        # Suspicious TLDs
+        r"[a-zA-Z0-9]+\.(ru|cn|tk|ml|ga|cf|gq|xyz|top|click|download)",
+        
+        # URL redirects (major red flag)
+        r"redirect\?url=", r"url=http", r"link=http", r"goto=http",
+        
+        # Suspicious subdomains
+        r"[a-zA-Z0-9-]+\.verify-user\.com", r"[a-zA-Z0-9-]+\.account-update\.com"
     ]
+    
     misspelled_brands = [
-        "paypa1", "faceb00k", "g00gle", "micros0ft", "amaz0n", "app1e"
+        "paypa1", "faceb00k", "g00gle", "micros0ft", "amaz0n", "app1e", "gooogle", "amazom", "payp4l"
     ]
+    
+    # Check for obvious phishing indicators
+    phishing_indicators = [
+        "evil.com", "malicious", "phishing", "scam", "fake", "fraud"
+    ]
+    
     score = 0
+    
+    # Check for URL redirects (highest priority)
+    if re.search(r"redirect\?url=|url=http|link=http|goto=http", link.lower()):
+        score += 5
+    
+    # Check for obvious phishing domains
+    for indicator in phishing_indicators:
+        if indicator in link.lower():
+            score += 5
+    
+    # Check suspicious patterns
     for pattern in suspicious_patterns:
         if re.search(pattern, link.lower()):
             score += 2
+            break  # Don't double count
+    
+    # Check misspelled brands
     for brand in misspelled_brands:
         if brand in link.lower():
-            score += 2
+            score += 3
+    
+    # Check for suspicious domain structure
+    if ".com." in link and not link.endswith(".com"):
+        score += 4
+    
+    # Simple response based on score
     if score >= 3:
-        return True, "Warning: This link is highly suspicious and may be a phishing attempt. Do not click it."
-    elif score == 2:
-        return True, "Caution: This link may be a phishing attempt. Be careful."
+        return True, "🚨 Yikes! This link is screaming danger—definitely looks like a phishing trap designed to steal your info. I'd stay far away from this one!"
     else:
-        return False, "This link does not appear to be phishing, but always check the URL carefully."
+        return False, "✅ This link checks out perfectly! Clean, legitimate, and totally safe to click. Go ahead!"
 
 # Remove DialoGPT and langchain fallback, add Ollama TinyLlama fallback
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")  # Store your key in .env
 
 def groq_response(user_message, model_name="llama3-70b-8192"):
-    print("GROQ_API_KEY:", GROQ_API_KEY)
+    if not GROQ_API_KEY:
+        return "Groq API key not configured. Please check your .env file."
+    
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {GROQ_API_KEY}",
@@ -93,15 +179,15 @@ def groq_response(user_message, model_name="llama3-70b-8192"):
             {"role": "user", "content": user_message}
         ]
     }
-    print("Sending to Groq:", data)
     try:
-        response = requests.post(url, headers=headers, json=data, timeout=30)
+        response = requests.post(url, headers=headers, json=data, timeout=10)  # Reduced timeout
         response.raise_for_status()
         result = response.json()
         return result["choices"][0]["message"]["content"]
+    except requests.exceptions.Timeout:
+        return "Response timeout. Please try again with a shorter question."
     except Exception as e:
-        print("Groq API error:", e)
-        return f"Error contacting Groq: {e}"
+        return f"Sorry, I'm having trouble connecting right now. Please try again later."
 
 def rule_based_response(user_message):
     rules = [
@@ -187,16 +273,54 @@ def chatbot_view(request):
         if rule_response:
             return JsonResponse({'response': rule_response})
 
+        # ML-First phishing detection using your trained models
         if (
             'subject:' in user_message and 'from:' in user_message and 'to:' in user_message
         ) or (
             'dear customer' in user_message or 'dear user' in user_message
-        ):
-            is_phishing, result = detect_phishing_email(user_message)
-            return JsonResponse({'response': result, 'phishing': is_phishing})
-        elif 'http' in user_message or 'www.' in user_message:
-            is_phishing, result = detect_phishing_link(user_message)
-            return JsonResponse({'response': result, 'phishing': is_phishing})
+        ) or any(keyword in user_message.lower() for keyword in ['email', 'from:', 'to:', 'subject:']):
+            # Email phishing detection - ML model first
+            ml_is_phishing, ml_confidence = predict_email_phishing(user_message)
+            
+            if ml_is_phishing is not None:
+                if ml_is_phishing:
+                    result = "🚨 Whoa, hold up! This email is throwing up some serious red flags. Looks like someone's trying to pull a fast one on you—classic phishing move!"
+                else:
+                    result = "✅ This email looks totally legit! Clean sender, personalized message, and no sketchy stuff in sight. You're good to go!"
+            else:
+                # Fallback to rule-based if ML fails
+                rule_is_phishing, rule_result = detect_phishing_email(user_message)
+                result = rule_result
+            
+            return JsonResponse({'response': result, 'phishing': ml_is_phishing if ml_is_phishing is not None else False})
+            
+        elif 'http' in user_message or 'www.' in user_message or any(tld in user_message.lower() for tld in ['.com', '.org', '.net', '.edu', '.gov']):
+            # URL phishing detection - ML model first
+            # Extract URLs from the message
+            urls = re.findall(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', user_message)
+            if not urls:
+                urls = re.findall(r'www\.(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', user_message)
+            if not urls:
+                # Extract domain-like patterns
+                urls = re.findall(r'[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:/[^\s]*)?', user_message)
+            
+            if urls:
+                url = urls[0]  # Check the first URL found
+                ml_is_phishing, ml_confidence = predict_url_phishing(url)
+                
+                if ml_is_phishing is not None:
+                    if ml_is_phishing:
+                        result = "🚨 Yikes! This link is screaming danger—definitely looks like a phishing trap designed to steal your info. I'd stay far away from this one!"
+                    else:
+                        result = "✅ This link checks out perfectly! Clean, legitimate, and totally safe to click. Go ahead!"
+                else:
+                    # Fallback to rule-based if ML fails
+                    rule_is_phishing, rule_result = detect_phishing_link(url)
+                    result = rule_result
+                
+                return JsonResponse({'response': result, 'phishing': ml_is_phishing if ml_is_phishing is not None else False})
+            else:
+                return JsonResponse({'response': "❓ **NO URL DETECTED** - Please provide a valid URL for analysis.", 'phishing': False})
 
         # Groq fallback (Llama 3 70B as default)
         groq_api_response = groq_response(user_message, model_name="llama3-70b-8192")
@@ -228,6 +352,81 @@ def upload_pdf_view(request):
         return JsonResponse({'qa_pairs': answers})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
+def register_view(request):
+    if request.method == 'POST':
+        username = request.POST.get('username')
+        email = request.POST.get('email')
+        password = request.POST.get('password')
+        confirm_password = request.POST.get('confirm_password')
+        
+        # Validation
+        if not username or not email or not password:
+            return render(request, 'nlp_app/register.html', {
+                'error_message': 'All fields are required.'
+            })
+        
+        if password != confirm_password:
+            return render(request, 'nlp_app/register.html', {
+                'error_message': 'Passwords do not match.'
+            })
+        
+        if len(password) < 6:
+            return render(request, 'nlp_app/register.html', {
+                'error_message': 'Password must be at least 6 characters long.'
+            })
+        
+        # Check if username already exists
+        if User.objects.filter(username=username).exists():
+            return render(request, 'nlp_app/register.html', {
+                'error_message': 'Username already exists. Please choose a different one.'
+            })
+        
+        # Check if email already exists
+        if User.objects.filter(email=email).exists():
+            return render(request, 'nlp_app/register.html', {
+                'error_message': 'Email already registered. Please use a different email.'
+            })
+        
+        try:
+            # Create new user
+            user = User.objects.create_user(
+                username=username,
+                email=email,
+                password=password
+            )
+            
+            # Log the user in automatically
+            login(request, user)
+            messages.success(request, 'Account created successfully! Welcome to CyBot.')
+            return redirect('chatbot_page')
+            
+        except Exception as e:
+            return render(request, 'nlp_app/register.html', {
+                'error_message': 'An error occurred while creating your account. Please try again.'
+            })
+    
+    return render(request, 'nlp_app/register.html')
+
+def login_view(request):
+    if request.method == 'POST':
+        username = request.POST.get('username')
+        password = request.POST.get('password')
+        
+        user = authenticate(request, username=username, password=password)
+        if user is not None:
+            login(request, user)
+            return redirect('chatbot_page')
+        else:
+            return render(request, 'nlp_app/login.html', {
+                'error_message': 'Invalid username or password. Please try again.'
+            })
+    
+    return render(request, 'nlp_app/login.html')
+
+def logout_view(request):
+    logout(request)
+    return redirect('login')
 
 def chatbot_page(request):
     return render(request, 'nlp_app/chatbot.html')
