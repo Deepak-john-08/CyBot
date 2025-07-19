@@ -7,3 +7,4 @@ __pycache__/
 db.sqlite3
 .DS_Store
 *.log
+models/bert_phising_model_tf
