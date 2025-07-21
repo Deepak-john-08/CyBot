@@ -7,5 +7,5 @@ __pycache__/
 db.sqlite3
 .DS_Store
 *.log
-
+nlp_app\models\bert_phishing_model_tf\
 nlp_app\models\bert_phishing_model_tf\variables\variables.data-00000-of-00001
