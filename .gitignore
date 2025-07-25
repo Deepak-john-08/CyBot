@@ -9,6 +9,6 @@ db.sqlite3
 *.log
 CyBot_IEEE_Paper.tex
 CyBot_IEEE_Report.tex
-CyBot_IEEE_Report.pdf
-CyBot_Project_Explaination.md
+CyBot_IEEE_Report.pd
 CyBot_Project_Report_IEEE.md
+CyBot_Project_Explanation.md
