@@ -9,3 +9,8 @@ db.sqlite3
 *.log
 nlp_app\models\bert_phishing_model_tf\
 nlp_app\models\bert_phishing_model_tf\variables\variables.data-00000-of-00001
+CyBot_IEEE_Paper.tex
+CyBot_IEEE_Report.tex
+CyBot_IEEE_Report.pdf
+CyBot_Project_Explaination.md
+CyBot_Project_Report_IEEE.md
